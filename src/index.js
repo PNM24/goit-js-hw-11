@@ -1,48 +1,110 @@
-import { fetchBreeds, fetchCatByBreed } from './cat-api';
-import Notiflix from 'notiflix';
+import axios from 'axios';
+import { Notify } from 'notiflix/build/notiflix-notify-aio';
+import SimpleLightbox from 'simplelightbox';
+import 'simplelightbox/dist/simple-lightbox.min.css';
 
-const dropdownBreedSelect = document.querySelector('.breed-select');
-const catInfo = document.querySelector('.cat-info');
-const loader = document.querySelector('.loader');
-const error = document.querySelector('.error');
+const baseUrl = 'https://pixabay.com/api/';
+const API_KEY = '44301427-831c86290fcfe2068098f5d0c';
+const variable = {
+  params: {
+    key: API_KEY,
+    image_type: 'photo',
+    orientation: 'horizontal',
+    safesearch: true,
+    per_page: 40,
+    page: 1,
+    q: '',
+  },
+};
 
-loader.style.display = 'none';
-error.style.display = 'none';
+const formInput = document.querySelector('.search-form');
+const photosGallery = document.querySelector('.gallery');
+const moreButton = document.querySelector('.load-more');
 
-fetchBreeds()
-  .then(breeds => {
-    breeds.forEach(breed => {
-      const listOption = document.createElement('option');
-      listOption.textContent = breed.name;
-      listOption.value = breed.id;
-      dropdownBreedSelect.append(listOption);
-    });
-  })
-  .catch(error => {
-    loader.style.display = 'none';
-    error.style.display = 'block';
-    Notiflix.Notify.failure(error.textContent);
+moreButton.style.display = 'none';
+
+const lightbox = () =>
+  new SimpleLightbox('.photo-card a', {
+    //captionsData: 'alt',
+    captionDelay: 250,
   });
 
-dropdownBreedSelect.addEventListener('change', function () {
-  loader.style.display = 'block';
-  error.style.display = 'none';
-  catInfo.style.display = 'none';
-  const breedId = dropdownBreedSelect.value;
-  fetchCatByBreed(breedId)
-    .then(catDetails => {
-      loader.style.display = 'none';
-      catInfo.style.display = 'flex';
-      catInfo.style.gap = '25px';
-      catInfo.style.marginTop = '25px';
-      catInfo.innerHTML = `<img src=${catDetails[0].url}  width="300px" alt="The ${catDetails[0].breeds[0].name} cat">
-      <div><h1 class="catBreed">${catDetails[0].breeds[0].name}  </h1>
-      <p>${catDetails[0].breeds[0].description}  </p>
-      <h5>Temperament: ${catDetails[0].breeds[0].temperament}  </h5></div>
-      `;
+function getPhotos(hits) {
+  const markup = hits
+    .map(item => {
+      return `
+       <div class="photo-card">
+          <a href="${item.largeImageURL}"> 
+            <img src="${item.webformatURL}" alt="${item.tags}" />
+          </a>
+          <div class="info">
+            <p class="info-item">
+              <p> <b> Likes </b> </br> ${item.likes}</p>
+            </p>
+            <p class="info-item">
+              <p> <b>Views</b> </br> ${item.views}</p>
+            </p>
+            <p class="info-item">
+              <p> <b> Comments</b></br>${item.comments}</p>
+            </p>
+            <p class="info-item">
+              <p> <b> Downloads</b></br>${item.downloads}</p>
+            </p>
+          </div>
+        </div>`;
     })
-    .catch(error => {
-      loader.style.display = 'none';
-      Notiflix.Notify.failure(error.textContent);
-    });
-});
+    .join('');
+  photosGallery.insertAdjacentHTML('beforeend', markup);
+}
+
+async function onSubmit(e) {
+  e.preventDefault();
+  const form = e.target;
+  variable.params.q = form.elements.searchQuery.value;
+  if (variable.params.q === '') {
+    Notify.info('Fill in the search input!');
+    photosGallery.innerHTML = '';
+    return;
+  }
+
+  variable.params.page = 1;
+  photosGallery.innerHTML = '';
+
+  try {
+    const response = await axios.get(baseUrl, variable);
+    const totalHits = response.data.totalHits;
+    const hits = response.data.hits;
+    if (hits.length === 0) {
+      moreButton.style.display = 'none';
+      Notify.failure(
+        'Sorry, there are no images matching your search query. Please try again.'
+      );
+    } else {
+      Notify.success(`Hooray! We found ${totalHits} images.`);
+      getPhotos(hits);
+      lightbox();
+      moreButton.style.display = 'block';
+    }
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+async function getMorePhotos() {
+  variable.params.page += 1;
+  try {
+    const response = await axios.get(baseUrl, variable);
+    const hits = response.data.hits;
+    const totalHits = response.data.totalHits;
+    getPhotos(hits);
+    if (variable.params.page * variable.params.per_page >= totalHits) {
+      moreButton.style.display = 'none';
+      Notify.info("We're sorry, but you've reached the end of search results.");
+    }
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+formInput.addEventListener('submit', onSubmit);
+moreButton.addEventListener('click', getMorePhotos);
